@@ -4,6 +4,10 @@ const passport = require('passport');
 // Importa la estrategia específica para la autenticación con Google usando el protocolo OAuth 2.0.
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 
+// Carga la librería dotenv. Esto lee tu archivo .env y pone 
+// todas esas variables en un objeto global llamado process.env
+require('dotenv').config();
+
 // --- MANEJO DE SESIONES ---
 
 // Esta función se llama después de que un usuario se autentica correctamente.
@@ -30,12 +34,12 @@ passport.use(
     // Crea una nueva instancia de la estrategia de Google con nuestras credenciales y opciones.
     new GoogleStrategy({
         // El ID de cliente que obtuvimos de la Google Cloud Console. Es público.
-        clientID: '829857821431-55lvsllb0u5ovjm2qsnpn5dffj125ilb.apps.googleusercontent.com',
+        clientID: process.env.GOOGLE_CLIENT_ID,
         // El secreto de cliente de Google. ¡DEBE MANTENERSE PRIVADO!
-        clientSecret: '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',
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
         // La URL a la que Google redirigirá al usuario después de que inicie sesión.
         // Debe coincidir EXACTAMENTE con la que está configurada en la Google Cloud Console.
-        callbackURL: 'https://cb61dae31616.ngrok-free.app/api/auth/google/callback'
+        callbackURL: process.env.GOOGLE_CALLBACK_URL
     }, (accessToken, refreshToken, profile, done) => {
         // --- FUNCIÓN DE VERIFICACIÓN (CALLBACK) ---
         // Esta función se ejecuta después de que Google autentica al usuario y nos redirige de vuelta.
