@@ -25,7 +25,7 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 app.use('/crear', userRoutes); //para crear un usuario
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', authRoutes); //crear un usuario con google o iniciar sesion con google
 
 // Iniciar el servidor
 app.listen(PORT, () => {
