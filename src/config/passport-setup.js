@@ -1,6 +1,9 @@
 // Importa la biblioteca principal de Passport, el middleware de autenticación para Node.js.
 const passport = require('passport');
 
+const pool = require('../config/db.js');
+const { application } = require('express');
+
 // Importa la estrategia específica para la autenticación con Google usando el protocolo OAuth 2.0.
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 
@@ -19,43 +22,73 @@ passport.serializeUser((user, done) => {
     done(null, user.id);
 });
 
-// Esta función se llama en cada petición subsecuente del usuario.
-// Su trabajo es tomar el ID guardado en la sesión y obtener los datos completos del usuario.
-passport.deserializeUser((id, done) => {
-    // Aquí, en una aplicación real, buscarías en tu base de datos al usuario con ese 'id'.
-    // Por ahora, solo devolvemos un objeto simple con el ID para adjuntarlo a `req.user`.
-    done(null, {id: id});
+
+passport.deserializeUser(async (id, done) => {
+    try{
+        const [rows] = await pool.query("SELECT * FROM accounts WHERE id = ?", [id]);
+
+        if (rows.length > 0){
+            done(null, rows[0]);
+        }else{
+            done(new Error('Usuario no encontrado'), null);
+        }
+    } catch (error){
+        done(error, null)
+    }
 });
 
-// --- CONFIGURACIÓN DE LA ESTRATEGIA DE GOOGLE ---
 
-// Le dice a Passport que use la estrategia de Google que hemos configurado.
 passport.use(
-    // Crea una nueva instancia de la estrategia de Google con nuestras credenciales y opciones.
+    
     new GoogleStrategy({
-        // El ID de cliente que obtuvimos de la Google Cloud Console. Es público.
+        
         clientID: process.env.GOOGLE_CLIENT_ID,
-        // El secreto de cliente de Google. ¡DEBE MANTENERSE PRIVADO!
+        
         clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-        // La URL a la que Google redirigirá al usuario después de que inicie sesión.
-        // Debe coincidir EXACTAMENTE con la que está configurada en la Google Cloud Console.
+
         callbackURL: process.env.GOOGLE_CALLBACK_URL
-    }, (accessToken, refreshToken, profile, done) => {
-        // --- FUNCIÓN DE VERIFICACIÓN (CALLBACK) ---
-        // Esta función se ejecuta después de que Google autentica al usuario y nos redirige de vuelta.
-        // 'accessToken' es un token para acceder a las APIs de Google en nombre del usuario.
-        // 'refreshToken' se usa para obtener un nuevo accessToken cuando el primero expire.
-        // 'profile' contiene toda la información del usuario que nos dio Google (nombre, email, foto, etc.).
-        
-        // Muestra en la consola del servidor el perfil del usuario que acaba de iniciar sesión. Muy útil para depurar.
-        console.log('Tenemos un perfil de Google!: ', profile);
+    }, async (accessToken, refreshToken, profile, done) => {
 
-        // Aquí es donde normalmente buscarías al usuario en tu base de datos o lo crearías si no existe.
+        const email = profile.emails[0].value;
+        const googleID = profile.id;
+        const displayName = profile.displayName;
 
-        // Llama a 'done' para indicarle a Passport que la autenticación fue exitosa.
-        // Pasamos 'null' porque no hubo errores, y 'profile' como el objeto de usuario.
-        // Este 'profile' se pasará a `passport.serializeUser` para iniciar la sesión.
-        done(null, profile);
-        
+        try {
+            const sqlFind = "SELECT * From accounts WHERE email = ?";
+            const [rows] = await pool.query(sqlFind, [email]);
+
+            if (rows.length > 0){ // el usuario ya existe
+                const user = rows[0];
+
+                if (!user.google_id){
+                    const sqlUpdate = "UPDATE accounts SET google_id = ? WHERE id = ?";
+                    await pool.query(sqlUpdate, [googleID, user.id]); 
+                }
+
+                done(null, user);
+            }
+            else{ // usuario no esta creado
+                const sqlCreate = "INSERT INTO accounts (email, google_id) VALUES (?, ?)";
+
+                const [result] = await pool.query(sqlCreate, [email, googleID]);
+
+                const newAccountId = result.insertId;
+
+                const sqlCreateFather = "INSERT INTO padres (father_name, account_id) VALUES (?, ?)";
+
+                await pool.query(sqlCreateFather, [displayName, newAccountId]);
+
+                const newUser = {
+                    id: result.insertId,
+                    email: email,
+                    google_id: googleID,
+                }
+
+                done(null, newUser);
+            }
+        } catch (error){
+            console.error(error);
+            done(error, null);
+        }   
     })
 );
