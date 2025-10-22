@@ -7,11 +7,13 @@ const session = require('express-session');
 require('./config/passport-setup');
 const userRoutes = require("./routes/userRoutes");
 const authRoutes = require('./routes/authRoutes');
+const cookieParser = require('cookie-parser');
 const PORT = 3000; // Puedes usar cualquier puerto libre
 
 // Middleware
 app.use(cors()); // Permite peticiones desde el frontend de RN
 app.use(express.json()); // Permite recibir datos en formato JSON
+app.use(cookieParser());
 
 app.use(session({
     secret: '1234',
