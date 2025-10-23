@@ -1,4 +1,4 @@
-const pool = require('../config/db.js'); // importo el pool del archivo db.js que sera mi conexion
+const modelBD = require('../modelsBD/accountModel'); // importo el pool del archivo db.js que sera mi conexion
 
 const bcrypt = require('bcrypt'); //importo bcrypt que es una libreria para hashear las contrasenias.
 
@@ -16,13 +16,37 @@ const crearUsuario = async (req, res) => { // la coloco en async para poder mane
     try{
         const passwordHash = await bcrypt.hash(password, 10);
 
-        const sql = "INSERT INTO accounts (email, password_hash) VALUES (?, ?)"; //se manda la query, se setean los valores con ? para evitar inyeccion SQL
+        const result = await modelBD.createUser(email, passwordHash);
 
-        const [result] = await pool.query(sql, [email, passwordHash]); // aqui se detiene la funcion y se espera a que se termine de hacer
+        if (!result || !result.userID) {
+            return res.status(500).send("Error al crear el usuario (no se recibio ID)");
+        }
+
+        const accessToken = jwt.sign(
+            {"userID": result.userID}, // Usamos el ID del nuevo usuario
+            process.env.JWT_ACCESS_SECRET,
+            {expiresIn: '15m'}
+        );
+        const refreshToken = jwt.sign(
+            {"userID": result.userID}, // Usamos el ID del nuevo usuario
+            process.env.JWT_REFRESH_SECRET,
+            {expiresIn: '7d'}
+        );
+
+        await modelBD.updateUserRefreshToken(result.userID, refreshToken);
+
+        res.cookie('jwt', refreshToken, {
+            httpOnly: true,
+            secure: true,
+            sameSite: 'None',
+            maxAge: 7 * 24 * 60 * 60 * 1000
+
+        });
 
         res.status(201).json({ // si todo sale bien se regresa codigo 201 y el id del nuevo usuario
-        message: "Usuario creado exitosamente",
-        userID: result.insertID
+        message: "Usuario creado exitosamente y logueado exitosamente",
+        accessToken: accessToken,
+        userID: result.userID
         });
     } catch (error){
         console.error(error);
@@ -42,14 +66,11 @@ const loginUsuarioEmail = async (req, res) => {
     }
 
     try{
-        const sql = "SELECT * FROM accounts WHERE email = ?";
-        const [rows] = await pool.query(sql, [email]);
+        const user = await modelBD.findUserByEmail(email);
 
-        if (rows.length === 0){
-            return res.status(401).send("Email o contraseña incorrectos");
+        if (!user) {
+            return res.status(401).send("Email o contrasenia incorrectos");
         }
-
-        const user = rows[0];
 
         const passwordIsValid = await bcrypt.compare(password, user.password_hash); // comparamos las contrasenias en hash
 
@@ -71,9 +92,7 @@ const loginUsuarioEmail = async (req, res) => {
             {expiresIn: '7d'} // expirara en 7 dias.
         );
 
-        const saveTokenSql = "UPDATE accounts SET refresh_token = ? where id = ?"; // guardamos el token en la base de datos
-
-        await pool.query(saveTokenSql, [refreshToken, user.id]);
+        await modelBD.updateUserRefreshToken(user.id, refreshToken); // guardamos el token en la base de datos
 
         res.cookie('jwt', refreshToken, {
             httpOnly: true,
