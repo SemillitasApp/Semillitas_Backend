@@ -1,8 +1,7 @@
 // Importa la biblioteca principal de Passport, el middleware de autenticación para Node.js.
 const passport = require('passport');
 
-const pool = require('../config/db.js');
-const { application } = require('express');
+const modelBD = require('../modelsBD/accountModel');
 
 // Importa la estrategia específica para la autenticación con Google usando el protocolo OAuth 2.0.
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
@@ -25,10 +24,10 @@ passport.serializeUser((user, done) => {
 
 passport.deserializeUser(async (id, done) => {
     try{
-        const [rows] = await pool.query("SELECT * FROM accounts WHERE id = ?", [id]);
+        const user = await modelBD.findUserById(id);
 
-        if (rows.length > 0){
-            done(null, rows[0]);
+        if (user){
+            done(null, user);
         }else{
             done(new Error('Usuario no encontrado'), null);
         }
@@ -54,36 +53,16 @@ passport.use(
         const displayName = profile.displayName;
 
         try {
-            const sqlFind = "SELECT * From accounts WHERE email = ?";
-            const [rows] = await pool.query(sqlFind, [email]);
+            let user = await modelBD.findUserByEmail(email);
 
-            if (rows.length > 0){ // el usuario ya existe
-                const user = rows[0];
-
-                if (!user.google_id){
-                    const sqlUpdate = "UPDATE accounts SET google_id = ? WHERE id = ?";
-                    await pool.query(sqlUpdate, [googleID, user.id]); 
+            if (user){
+                if(!user.google_id){
+                    await modelBD.updateUserGoogleId(user.id, googleID);
                 }
-
                 done(null, user);
             }
-            else{ // usuario no esta creado
-                const sqlCreate = "INSERT INTO accounts (email, google_id) VALUES (?, ?)";
-
-                const [result] = await pool.query(sqlCreate, [email, googleID]);
-
-                const newAccountId = result.insertId;
-
-                const sqlCreateFather = "INSERT INTO padres (father_name, account_id) VALUES (?, ?)";
-
-                await pool.query(sqlCreateFather, [displayName, newAccountId]);
-
-                const newUser = {
-                    id: result.insertId,
-                    email: email,
-                    google_id: googleID,
-                }
-
+            else {
+                const newUser = await modelBD.createGoogleUser(email, googleID, displayName);
                 done(null, newUser);
             }
         } catch (error){
